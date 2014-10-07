@@ -4,38 +4,16 @@ require 'colorize'
 #- Common unicode string helpers --------------------------------------- 
 class String
 
+	def words_array
+		self.split(/[^a-zA-Zа-яА-ЯёЁ0-9]/).reject(&:empty?)
+	end
+
 	def words_str
-		self.split(/[^a-zA-Zа-яА-ЯёЁ0-9]/).reject(&:empty?).join(' ')
-	end
-
-	def first_n_words n
-		text = self.clone
-		words = text.scan(/[a-zA-Zа-яёА-ЯЁ]+/)[0..n-1]
-		if words.size < n
-			res = text
-		else
-			res = words.each_with_object([]){|k,v|t= text.index k; v << text[0..t+k.size-1]; text = text[t+k.size..-1]}.join
-		end
-		res
-	end
-
-	def last_n_words n
-		text = self.clone
-		words = text.scan(/[a-zA-Zа-яёА-ЯЁ]+/)[-n..-1]
-		if words.size < n
-			res = text
-		else
-			res = words.each_with_object([]){|k,v|t= text.index k; v << text[0..t+k.size-1]; text = text[t+k.size..-1]}.join
-		end
-		res
+		self.words_array.join(' ')
 	end
 
 	def word_count
-		self.split(/[^a-zA-Zа-яА-ЯёЁ0-9]/).reject(&:empty?).size
-	end
-
-	def unquote
-		self.gsub(/\"|\'/,"")
+		self.words_array.size
 	end
 
 	def downcase
@@ -67,25 +45,26 @@ end
 #- Разбор Ruby файла -------------------------------------------------------------------------------------------
 def phrases_templates
 	[
-		/(([а-яА-ЯёЁ]+[\,\.\s–\-:;><\)\(\&a-zA-Z]*)++)/
+		/(([а-яА-ЯёЁ]+[\!\?\,\.\s–\-:;><\)\(\&a-zA-Z]*)++)/
 	]
 end
 
 #- Разбор Ruby файла -------------------------------------------------------------------------------------------
-def localize(filename, template_numbers)
+def localize(filename, template_numbers, settings_file)
 	file_content = file2str filename
 	template_numbers.each do |template_number|
-		create_dictionary(filename, file_content, phrases_templates[template_number])
+		create_dictionary(filename, file_content, phrases_templates[template_number], settings_file)
 	end
 end
 
 #- обновление / создание словаря из встреченных в файле по регулярному выражению -------------------------------
-def create_dictionary(filename, file_content, regexp)
+def create_dictionary(filename, file_content, regexp, settings_file)
 	first_n = 4
 	last_m = 2
 	namespace = filename.split('/')[1].split(/[_\.]/)[0]
 	file_strings = file_content.split(/\n/)
-	file_strings.each do |str|
+	file_strings.each_with_index do |str_original, str_number|
+		str = str_original.clone
 		if filename =~ /\.rb$/
 			str.gsub!(/#[^{].+$/,'') #Вырезаем комментарии
 		elsif filename =~ /\.haml$/
@@ -99,12 +78,13 @@ def create_dictionary(filename, file_content, regexp)
 			result.each do |arr|
 				phrase = arr[0]
 				if phrase.word_count > first_n + last_m
-					words_array = phrase.split(/[^a-zA-Zа-яА-ЯёЁ0-9]/).reject(&:empty?)
+					words_array = phrase.words_array
 					phrase = words_array[0..first_n-1].join(' ')+"  "+words_array[-last_m..-1].join(' ')
 				else
 					phrase = phrase.words_str
 				end
 				puts "#{filename} - ".yellow + "#{namespace}.#{phrase.downcase.gsub(/[^а-яА-ЯёЁa-zA-Z0-9]/,'_')}".cyan
+				settings_file.write "[]#{namespace}.#{phrase.downcase.gsub(/[^а-яА-ЯёЁa-zA-Z0-9]/,'_')} <delimiter> ##{str_number}#{str_original} <delimiter> #{filename}\n"
 			end
 		end
 	end
@@ -119,19 +99,33 @@ def file2str(filename)
 	file_content
 end
 
-#----------------------------------------------------------------------- 
-Dir.glob("**/*").each do |entryname|
-	if File.directory? entryname
-		next
-	elsif entryname == 'localizer.rb'
-		next
-	elsif entryname.split('/')[0..1].include? "admin"
-		next
-	end
-	if entryname =~ /\.rb$/i
-		localize entryname, [0]
-	elsif entryname =~ /\.haml$/i
-		localize entryname, [0]
+def settings_message
+	"
+		# Конфигурационный файл подготовки Rails-проекта к интернационализации
+		# Этап 1. Настройка
+		#  В нижеследующих строках установите в началах строк флаги по следующему принципу:
+		#  [x] - Не изменять текущую фразу
+		#  [x] - 
+		#  [x] - 
+	"
+end
+
+#-----------------------------------------------------------------------
+File.open("settings.yml", "w") do |settings_file|
+	settings_file.write "#{settings_message}\n\n" 
+	Dir.glob("**/*").each do |entryname|
+		if File.directory? entryname
+			next
+		elsif entryname =~ /localizer.+?\.rb$/
+			next
+		elsif entryname.split('/')[0..1].include? "admin"
+			next
+		end
+		if entryname =~ /\.rb$/i
+			localize entryname, [0], settings_file
+		elsif entryname =~ /\.haml$/i
+			localize entryname, [0], settings_file
+		end
 	end
 end
 

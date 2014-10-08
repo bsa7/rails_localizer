@@ -20,3 +20,44 @@ def make_replace str_original, phrase, key, method, filename
 	str
 end
 
+#- Common unicode string helpers --------------------------------------- 
+class String
+
+	def words_array
+		self.split(/[^a-zA-Zа-яА-ЯёЁ0-9]/).reject(&:empty?)
+	end
+
+	def words_str
+		self.words_array.join(' ')
+	end
+
+	def word_count
+		self.words_array.size
+	end
+
+	def downcase
+		Unicode::downcase(self)
+	end
+
+	def downcase!
+		self.replace downcase
+	end
+
+	def upcase
+		Unicode::upcase(self)
+	end
+
+	def upcase!
+		self.replace upcase
+	end
+
+	def capitalize
+		Unicode::capitalize(self)
+	end
+
+	def capitalize!
+		self.replace capitalize
+	end
+
+end
+

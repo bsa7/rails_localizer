@@ -95,7 +95,7 @@ def create_dictionary(filename, file_content, regexp)
 				new_episode["новая_версия_фразы"] = arr[0].strip
 				new_episode["оригинальная_строка_файла"] = str_original
 				new_episode["действие"] = "[#{guess_context(arr[0].strip, str_original, filename)}]"
-				new_episode["какой_строка_файла__будет"] = make_replace(str_original.clone, arr[0].strip, new_episode["ключ_фразы"], new_episode["действие"], filename)
+				new_episode["какой_строка_файла__будет"] = make_replace(str, arr[0].strip, new_episode["ключ_фразы"], new_episode["действие"], filename)
 				$settings[filename_str]["#{position}"] = new_episode
 			end
 		end

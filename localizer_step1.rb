@@ -1,5 +1,43 @@
 require 'unicode'
 require 'colorize'
+require 'yaml'
+
+$settings = {}
+
+def update_str str, identation, key, value
+	str += identation + "#{key}:"
+	if [Array, Hash].include? value.class
+		str += "\n"
+		str += iterate(value, identation + "  ")+"\n"
+	else
+		if value.class == String
+			str += " \"#{value.gsub('"','\"')}\"\n"
+		else
+			str += " #{value}\n"
+		end
+	end
+	str
+end
+
+def iterate hsh, identation
+	str = ""
+	if hsh.class == Array
+		hsh.each_with_index do |value, key|
+			str = update_str str, identation, key, value
+		end
+	elsif hsh.class == Hash
+		hsh.each do |key, value|
+			str = update_str str, identation, key, value
+		end
+	end
+	str
+end
+
+class Hash
+	def to_yaml_bsa #колхоз, чтобы получить yaml без нервотрёпки
+		iterate self, ""
+	end
+end
 
 #- Common unicode string helpers --------------------------------------- 
 class String
@@ -50,15 +88,15 @@ def phrases_templates
 end
 
 #- Разбор Ruby файла -------------------------------------------------------------------------------------------
-def localize(filename, template_numbers, settings_file)
+def localize(filename, template_numbers)
 	file_content = file2str filename
 	template_numbers.each do |template_number|
-		create_dictionary(filename, file_content, phrases_templates[template_number], settings_file)
+		create_dictionary(filename, file_content, phrases_templates[template_number])
 	end
 end
 
 #- обновление / создание словаря из встреченных в файле по регулярному выражению -------------------------------
-def create_dictionary(filename, file_content, regexp, settings_file)
+def create_dictionary(filename, file_content, regexp)
 	first_n = 4
 	last_m = 2
 	namespace = filename.split('/')[1].split(/[_\.]/)[0]
@@ -84,7 +122,15 @@ def create_dictionary(filename, file_content, regexp, settings_file)
 					phrase = phrase.words_str
 				end
 				puts "#{filename} - ".yellow + "#{namespace}.#{phrase.downcase.gsub(/[^а-яА-ЯёЁa-zA-Z0-9]/,'_')}".cyan
-				settings_file.write "[]#{namespace}.#{phrase.downcase.gsub(/[^а-яА-ЯёЁa-zA-Z0-9]/,'_')} <delimiter> ##{str_number}#{str_original} <delimiter> #{filename}\n"
+				$settings[filename] ||= {}
+				position = $settings[filename].keys.size+1
+				new_episode = {}
+				new_episode["номер_строки"] = str_number
+				new_episode["ключ_фразы"] = "#{namespace}.#{phrase.downcase.gsub(/[^а-яА-ЯёЁa-zA-Z0-9]/,'_')}"
+				new_episode["оригинал_фразы"] = arr[0]
+				new_episode["оригинальная_строка_файла"] = str_original
+				new_episode["действие"] = "[]"
+				$settings[filename]["#{position}"] = new_episode
 			end
 		end
 	end
@@ -101,31 +147,46 @@ end
 
 def settings_message
 	"
-		# Конфигурационный файл подготовки Rails-проекта к интернационализации
-		# Этап 1. Настройка
-		#  В нижеследующих строках установите в началах строк флаги по следующему принципу:
-		#  [x] - Не изменять текущую фразу
-		#  [x] - 
-		#  [x] - 
+# Конфигурационный файл подготовки Rails-проекта к интернационализации
+# Строки файла устроены следующим образом:
+# mailers/preorder_mailer.rb:                                                              # Имя файла с исходным кодом
+#  1:                                                                                      # порядковый номер фразы в исходном коде
+#    номер_строки: 8                                                                       # Номер строки с найденной фразой
+#    ключ_фразы: \"preorder.ошибка_покупки_тура\"                                          # Ключ фразы для yml файла. Можете изменять его
+#    оригинал_фразы: \"Ошибка покупки тура\"                                               # Оригинал найденной фразы в исходном коде
+#    оригинальная_строка_файла: \"    mail(to: email, subject: 'Ошибка покупки тура')\"    # Строка файла, содержащая фразу целиком, нужна для понимания контекста
+#    действие: \"[]\"                                                                      # Вид действия, которое нужно совершить
+
+# Этап 1. Настройка
+#  В нижеследующих строках установите в началах строк флаги по следующему принципу:
+#  [] - Не изменять текущую фразу
+#  [1] - Заменить как обычную строку Ruby, заключённую в одинарные кавычки, целиком вместе с кавычками.
+#        Пример замены: 'ваша фраза' => I18n.t(:ваша_фраза)
+#  [2] - То же самое, что и [1], только фраза заключена в двойные кавычки.
+#        Пример: \"ваша фраза\" => I18n.t(:ваша_фраза)
+#  [3] - Заменить фразу на вычисляемое выражение внутри строки
+#        Пример: \"Ваша фраза \#\{index\} Другая фраза\" => \"\#\{I18n.t(\"ваша_фраза\"\} \#\{index\} \#\{I18n.t(\"другая_фраза\")\}\"
 	"
 end
 
 #-----------------------------------------------------------------------
-File.open("settings.yml", "w") do |settings_file|
-	settings_file.write "#{settings_message}\n\n" 
-	Dir.glob("**/*").each do |entryname|
-		if File.directory? entryname
-			next
-		elsif entryname =~ /localizer.+?\.rb$/
-			next
-		elsif entryname.split('/')[0..1].include? "admin"
-			next
-		end
-		if entryname =~ /\.rb$/i
-			localize entryname, [0], settings_file
-		elsif entryname =~ /\.haml$/i
-			localize entryname, [0], settings_file
-		end
+Dir.glob("**/*").each do |entryname|
+	if File.directory? entryname
+		next
+	elsif entryname =~ /localizer.+?\.rb$/
+		next
+	elsif entryname.split('/')[0..1].include? "admin"
+		next
+	end
+	if entryname =~ /\.rb$/i
+		localize entryname, [0]
+	elsif entryname =~ /\.haml$/i
+		localize entryname, [0]
 	end
 end
+File.open("settings.yml", "w") do |settings_file|
+	settings_file.write "#{settings_message}\n\n"
+	settings_file.write $settings.to_yaml_bsa
+end
 
+#puts $settings.inspect
